@@ -47,6 +47,16 @@ void led_on(int number){
     state[number] = 1;
 }
 
+void action(const char* act){
+    if (message_size != 0)
+        return;
+    strcpy(message_buffor, act);
+    message_index = 0;
+    message_size = strlen(message_buffor);    
+    Delay(1000000);
+}
+
+
 void led_off(int number){
     if (number == 1)
         GPIOA->BSRRL = 1 << 6;
@@ -68,22 +78,25 @@ void led_toggle(int number){
 }
 
 void check_usart_write(){
+
     if (!(message_index < message_size))
         return;
 
     if (!(USART2->SR & USART_SR_TXE))
         return;
 
+    __disable_irq();
+    
     char c = message_buffor[message_index++];
     USART2->DR = c;
 
     if (message_index == message_size){
-        message_size = 0;
         message_index = 0;
+        message_size = 0;
     }
-     
+    __enable_irq();
 }
-
+/*
 void check_usart_read(){
     if (!(USART2->SR & USART_SR_RXNE))
         return;
@@ -157,10 +170,52 @@ void check_usart_read(){
     }
 
 }
+*/
+
+void EXTI0_IRQHandler(void) {
+        action("MODE\r\n");
+        EXTI->PR = EXTI_PR_PR0;
+}
+
+void EXTI3_IRQHandler(void) {
+        action("LEFT\r\n");
+        EXTI->PR = EXTI_PR_PR3;
+}
+
+void EXTI4_IRQHandler(void) {
+        action("MODE\r\n");
+        EXTI->PR = EXTI_PR_PR4;
+}
+
+void EXTI9_5_IRQHandler(void) {
+    if (EXTI->PR | EXTI_PR_PR5){
+        action("UP\r\n");
+        EXTI->PR = EXTI_PR_PR5;
+    }
+    if (EXTI->PR | EXTI_PR_PR6){
+        action("DOWN\r\n");
+        EXTI->PR = EXTI_PR_PR6;
+    }
+}
+
+void EXTI15_10_IRQHandler(void) {
+    if (EXTI->PR | EXTI_PR_PR10){
+        action("FIRE\r\n");
+        EXTI->PR = EXTI_PR_PR10;
+    }
+    if (EXTI->PR | EXTI_PR_PR13){
+        action("USER\r\n");
+        EXTI->PR = EXTI_PR_PR13;
+    }
+}
 
 void led_init(){
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
     __NOP();
+
+    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+    //SYSCFG->EXTICR[3] |= SYSCFG_EXTICR4_EXTI13_PC;
+
     GPIOA->BSRRL = 1 << 6 | 1 << 7;
     GPIOB->BSRRL = 1 << 0;
     GPIOA->BSRRH = 1 << 5;
@@ -173,8 +228,29 @@ void led_init(){
     GPIOoutConfigure(GPIOA, 5, GPIO_OType_PP,
     GPIO_Low_Speed, GPIO_PuPd_NOPULL);
 
-    GPIOinConfigure(GPIOC, 13, GPIO_PuPd_NOPULL,
-    EXTI_Mode_Disable, EXTI_Trigger_Irrelevant);
+    //For interrupts
+    GPIOinConfigure(GPIOC, 13, GPIO_PuPd_UP,
+    EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+
+    GPIOinConfigure(GPIOB, 3, GPIO_PuPd_UP,
+    EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+    GPIOinConfigure(GPIOB, 4, GPIO_PuPd_UP,
+    EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+    GPIOinConfigure(GPIOB, 5, GPIO_PuPd_UP,
+    EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+    GPIOinConfigure(GPIOB, 6, GPIO_PuPd_UP,
+    EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+    GPIOinConfigure(GPIOB, 10, GPIO_PuPd_UP,
+    EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+
+    GPIOinConfigure(GPIOA, 0, GPIO_PuPd_DOWN,
+    EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+
+    NVIC_EnableIRQ(EXTI0_IRQn);
+    NVIC_EnableIRQ(EXTI3_IRQn);
+    NVIC_EnableIRQ(EXTI4_IRQn);
+    NVIC_EnableIRQ(EXTI9_5_IRQn);
+    NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
 void usart_init(){
@@ -227,61 +303,6 @@ void led_test(){
         Delay(400000);
         GPIOA->BSRRH = 1 << 5;;
     }
-}
-
-void action(const char* act){
-    strcpy(message_buffor, act);
-    message_index = 0;
-    message_size = strlen(message_buffor);    
-}
-
-void check_IO(){
-
-    if (message_size != 0)
-        return;
-
-    // USER PC13 0
-    if ((GPIOC->IDR & (1 << 13)) == 0){
-        action("USER\r\n");
-        Delay(900000);
-    }
-
-    // LEFT PB3 0
-    if ((GPIOB->IDR & (1 << 3)) == 0){
-        action("LEFT\r\n");
-        Delay(900000);
-    }
-    
-    // RIGHT PB4 0
-    if ((GPIOB->IDR & (1 << 4)) == 0){
-        action("RIGHT\r\n");
-        Delay(900000);
-    }
-
-    // UP PB5 0
-    if ((GPIOB->IDR & (1 << 5)) == 0){
-        action("UP\r\n");
-        Delay(900000);
-    }
-
-    // DOWN PB6 0
-    if ((GPIOB->IDR & (1 << 6)) == 0){
-        action("DOWN\r\n");
-        Delay(900000);
-    }
-
-    // FIRE  PB10 0
-    if ((GPIOB->IDR & (1 << 10)) == 0){
-        action("FIRE\r\n");
-        Delay(900000);
-    }
-
-    // MODE PA0 1
-     if ((GPIOA->IDR & (1 << 0)) == 1){
-        action("MODE\r\n");
-        Delay(900000);
-    }
-
 }
 
 void clock_100_configure(){
@@ -374,23 +395,16 @@ int main() {
     usart_init();
     action("HELLO\r\n");
     
-    //led_on(1);
-    //led_on(2);
-    //led_on(3);
+    led_on(1);
 
     while(1){
-        check_usart_read();
+        //check_usart_read();
         check_usart_write();
-        Delay(1000000);
-        led_on(2);
-        Delay(1000000);
-        led_off(2); 
+        //Delay(50);
+        //led_on(2);
+        //Delay(50);
+        //led_off(2); 
     }
-
-    /*
-    for(;;) {
-        check_IO();
-    }*/
 
     return 0;
 }
