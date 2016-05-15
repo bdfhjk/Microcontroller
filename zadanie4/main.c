@@ -4,48 +4,18 @@
 #include <string.h>
 #include <fonts.h>
 #include <lcd.h>
+#include "constants.h"
 
-#define USART_Mode_Rx_Tx (USART_CR1_RE | USART_CR1_TE)
-#define USART_Enable      USART_CR1_UE
-
-#define USART_WordLength_8b 0x0000
-#define USART_WordLength_9b USART_CR1_M
-
-#define USART_Parity_No 0x0000
-#define USART_Parity_Even USART_CR1_PCE
-#define USART_Parity_Odd (USART_CR1_PCE | USART_CR1_PS)
-
-#define USART_StopBits_1    0x0000
-#define USART_StopBits_0_5  0x1000
-#define USART_StopBits_2    0x2000
-#define USART_StopBits_1_5  0x3000
-
-#define USART_FlowControl_None 0x0000
-#define USART_FlowControl_RTS USART_CR3_RTSE
-#define USART_FlowControl_CTS USART_CR3_CTSE
-
-#define HSI_VALUE   16000000U
-#define PCLK1_VALUE 50000000U
-
-
-/* [TABELA STANÓW]
-0 - inicjalizacja
-1 - wczytywanie pierwszej liczby
-2 - wczytywanie drugiej liczby
-3 - wypisywanie wyniku
-4 - wyswietlanie wyniku
-*/
 
 enum STATE {
-    INIT,
-    READ_1,
-    READ_2,
-    WRITE,
-    DISPLAY
+    INIT,     //Initialisation of the program
+    READ_1,   //Reading the first number
+    READ_2,   //Reading the second number
+    WRITE,    //Writting the result to LCD
+    DISPLAY   //Displaying the result on the LCD
 };
 
 enum STATE state;
-
 
 long long number_1;
 long long number_2;
@@ -146,8 +116,105 @@ void press(char a){
       operation = a;
       state++;
   }
+}
+
+void configure_timer(){
+
+  //Counting up mode.
+  TIM3->CR1 = 0;
+
+  //Prescaler (Fck_cnt = Fck_tim / (PSC+1))
+  //10ms = 100hz
+  //Base clock: 50MHz
+  //50Mhz / 100hz = 500'000
+  TIM3->PSC = 500000;
+  TIM3->ARR = 1;
+
+  TIM3->SR = ~(TIM_SR_UIF | TIM_SR_CC1IF);
+  TIM3->DIER = TIM_DIER_UIE | TIM_DIER_CC1IE;
+  NVIC_EnableIRQ(TIM3_IRQn);
+}
+
+void TIM3_IRQHandler(void) {
+  uint32_t it_status = TIM3->SR & TIM3->DIER;
+  if (it_status & TIM_SR_UIF) {
+    TIM3->SR = ~TIM_SR_UIF;
+
+  }
+  if (it_status & TIM_SR_CC1IF) {
+    TIM3->SR = ~TIM_SR_CC1IF;
+
+  }
+
+  if (
+      (GPIOC->IDR & (1 << 5)) &&
+      (GPIOC->IDR & (1 << 6)) &&
+      (GPIOC->IDR & (1 << 7)) &&
+      (GPIOC->IDR & (1 << 8))
+     )
+        scan_keyboard();
+}
+
+void scan_keyboard(){
 
 }
+
+void configure_keyboard(){
+  //Configure columns
+  GPIOoutConfigure(GPIOC, 1, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
+  GPIOoutConfigure(GPIOC, 2, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
+  GPIOoutConfigure(GPIOC, 3, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
+  GPIOoutConfigure(GPIOC, 4, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
+
+  //Configure rows
+  GPIOinConfigure(GPIOC, 5, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+  GPIOinConfigure(GPIOC, 6, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+  GPIOinConfigure(GPIOC, 7, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+  GPIOinConfigure(GPIOC, 8, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+
+  //Clear interrupt bits and enable interrupts
+  EXTI->PR = EXTI_PR_PR5;
+  EXTI->PR = EXTI_PR_PR6;
+  EXTI->PR = EXTI_PR_PR7;
+  EXTI->PR = EXTI_PR_PR8;
+  NVIC_EnableIRQ(EXTI9_5_IRQn);
+}
+
+void EXTI9_5_IRQHandler(void) {
+
+    //Temporary disable interrupts
+    NVIC_DisableIRQ(EXTI9_5_IRQn);
+
+    //Set high state in collumn lines
+    GPIOC->BSRRH = 1 << 1;
+    GPIOC->BSRRH = 1 << 2;
+    GPIOC->BSRRH = 1 << 3;
+    GPIOC->BSRRH = 1 << 4;
+
+    //Reset timer CNT
+    TIM3->CNT = 0;
+
+    if (EXTI->PR | EXTI_PR_PR5){
+
+        EXTI->PR = EXTI_PR_PR5;
+    }
+    if (EXTI->PR | EXTI_PR_PR6){
+
+        EXTI->PR = EXTI_PR_PR6;
+    }
+    if (EXTI->PR | EXTI_PR_PR7){
+
+        EXTI->PR = EXTI_PR_PR7;
+    }
+    if (EXTI->PR | EXTI_PR_PR8){
+
+        EXTI->PR = EXTI_PR_PR8;
+    }
+
+    //Start the timer
+    TIM3->CR1 |= TIM_CR1_CEN;
+}
+
 
 void process_read()
 {
