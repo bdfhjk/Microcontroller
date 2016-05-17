@@ -29,6 +29,8 @@ int queue_print_n;
 int queue_print_a;
 char operations_print_queue[1000];
 
+char ready_to_process;
+
 void init_logic(){
   queue_read_a = 0;
   queue_read_n = 0;
@@ -42,6 +44,8 @@ void init_logic(){
   operation = 0;
 
   state = 0;
+
+  ready_to_process = 0;
 }
 
 void print_error(){
@@ -120,6 +124,9 @@ void press(char a){
 
 void configure_timer(){
 
+  RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
+  __NOP();
+
   //Counting up mode.
   TIM3->CR1 = 0;
 
@@ -127,92 +134,218 @@ void configure_timer(){
   //10ms = 100hz
   //Base clock: 50MHz
   //50Mhz / 100hz = 500'000
-  TIM3->PSC = 500000;
-  TIM3->ARR = 1;
+  TIM3->PSC = 65000;//65000;//500000;
+  TIM3->ARR = 100;
 
-  TIM3->SR = ~(TIM_SR_UIF | TIM_SR_CC1IF);
-  TIM3->DIER = TIM_DIER_UIE | TIM_DIER_CC1IE;
+  TIM3->EGR = TIM_EGR_UG;
+
+  //Enable interrupts
+  TIM3->SR = ~(TIM_SR_UIF);
+  TIM3->DIER = TIM_DIER_UIE;
   NVIC_EnableIRQ(TIM3_IRQn);
 }
 
 void TIM3_IRQHandler(void) {
-  uint32_t it_status = TIM3->SR & TIM3->DIER;
-  if (it_status & TIM_SR_UIF) {
-    TIM3->SR = ~TIM_SR_UIF;
-
-  }
-  if (it_status & TIM_SR_CC1IF) {
-    TIM3->SR = ~TIM_SR_CC1IF;
-
-  }
-
   if (
-      (GPIOC->IDR & (1 << 5)) &&
       (GPIOC->IDR & (1 << 6)) &&
       (GPIOC->IDR & (1 << 7)) &&
-      (GPIOC->IDR & (1 << 8))
-     )
-        scan_keyboard();
+      (GPIOC->IDR & (1 << 8)) &&
+      (GPIOC->IDR & (1 << 9))
+    )
+
+    //scan_keyboard();
+
+    if (ready_to_process != 0)
+      operations_print_queue[queue_print_n++] = ready_to_process;
+
+    TIM3->CR1 &= 0x1110;
+    TIM3->DIER = TIM_DIER_UIE;
+    TIM3->SR = ~TIM_SR_UIF;
+    TIM3->SR;
+
+    GPIOC->BSRRH = 1 << 0;
+    GPIOC->BSRRH = 1 << 1;
+    GPIOC->BSRRH = 1 << 2;
+    GPIOC->BSRRH = 1 << 3;
+    NVIC_EnableIRQ(EXTI9_5_IRQn);
+
+/*
+  if (
+      (GPIOC->IDR & (1 << 6)) &&
+      (GPIOC->IDR & (1 << 7)) &&
+      (GPIOC->IDR & (1 << 8)) &&
+      (GPIOC->IDR & (1 << 9))
+    )
+      operations_print_queue[queue_print_n++] = '0' + 6;
+  else
+      operations_print_queue[queue_print_n++] = '0' + 8;
+
+  //TIM3->CR1 &= 0x1110;
+
+  /*
+  uint32_t it_status = TIM3->SR & TIM3->DIER;
+
+  //Update event
+  if (it_status & TIM_SR_UIF) {
+    TIM3->SR = ~TIM_SR_UIF;
+  }
+
+  //A button is still pressed
+  if (
+      (GPIOC->IDR & (1 << 6)) &&
+      (GPIOC->IDR & (1 << 7)) &&
+      (GPIOC->IDR & (1 << 8)) &&
+      (GPIOC->IDR & (1 << 9))
+    ) {
+      //operations_print_queue[queue_print_n++] = '0' + 7;
+
+      //Disable timTIM3->EGR = TIM_EGR_UG;print_queue[queue_print_n++] = '0' + 5;
+
+        //Low state on collumns
+        GPIOC->BSRRH = 1 << 0;
+        GPIOC->BSRRH = 1 << 1;
+        GPIOC->BSRRH = 1 << 2;
+        GPIOC->BSRRH = 1 << 3;
+        NVIC_EnableIRQ(EXTI9_5_IRQn);
+        //Disable timer
+        TIM3->CR1 &= 0x1110;
+
+        //Clear interrupt bits and enable interrupts
+        EXTI->PR = 255;
+
+        //NVIC_EnableIRQ(EXTI9_5_IRQn);
+
+    }
+        //scan_keyboard(); */
+
+
 }
 
 void scan_keyboard(){
+  ready_to_process = 0;
+  int i;
+  //Set only 1 column active
+  GPIOC->BSRRH = 1 << 0;
+  GPIOC->BSRRL = 1 << 1;
+  GPIOC->BSRRL = 1 << 2;
+  GPIOC->BSRRL = 1 << 3;
+
+  for (i = 0; i < 1000; i++)
+  __NOP();
+
+  if (!(GPIOC->IDR & (1 << 6))) ready_to_process = '0' + 1;
+  if (!(GPIOC->IDR & (1 << 7))) ready_to_process = '0' + 4;
+  if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '0' + 7;
+  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = 'C';
+
+
+  //Set only 1 column active
+  GPIOC->BSRRL = 1 << 0;
+  GPIOC->BSRRH = 1 << 1;
+  GPIOC->BSRRL = 1 << 2;
+  GPIOC->BSRRL = 1 << 3;
+
+  for (i = 0; i < 1000; i++)
+  __NOP();
+
+  if (!(GPIOC->IDR & (1 << 6))) ready_to_process = '0' + 2;
+  if (!(GPIOC->IDR & (1 << 7))) ready_to_process = '0' + 5;
+  if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '0' + 8;
+  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = '0';
+
+  //Set only 1 column active
+  GPIOC->BSRRL = 1 << 0;
+  GPIOC->BSRRL = 1 << 1;
+  GPIOC->BSRRH = 1 << 2;
+  GPIOC->BSRRL = 1 << 3;
+
+  for (i = 0; i < 1000; i++)
+  __NOP();
+
+  if (!(GPIOC->IDR & (1 << 6))) ready_to_process = '0' + 3;
+  if (!(GPIOC->IDR & (1 << 7))) ready_to_process = '0' + 6;
+  if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '0' + 9;
+  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = '=';
+
+  //Set only 1 column active
+  GPIOC->BSRRL = 1 << 0;
+  GPIOC->BSRRL = 1 << 1;
+  GPIOC->BSRRL = 1 << 2;
+  GPIOC->BSRRH = 1 << 3;
+
+  for (i = 0; i < 1000; i++)
+  __NOP();
+
+  if (!(GPIOC->IDR & (1 << 6))) ready_to_process = '+';
+  if (!(GPIOC->IDR & (1 << 7))) ready_to_process = '-';
+  if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '*';
+  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = '/';
 
 }
 
-void configure_keyboard(){
+void configure_keyboard() {
+  RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
+  __NOP();
+  __NOP();
   //Configure columns
+  GPIOoutConfigure(GPIOC, 0, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
   GPIOoutConfigure(GPIOC, 1, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
   GPIOoutConfigure(GPIOC, 2, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
   GPIOoutConfigure(GPIOC, 3, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
-  GPIOoutConfigure(GPIOC, 4, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
+
+  GPIOC->BSRRH = 1 << 0;
+  GPIOC->BSRRH = 1 << 1;
+  GPIOC->BSRRH = 1 << 2;
+  GPIOC->BSRRH = 1 << 3;
 
   //Configure rows
-  GPIOinConfigure(GPIOC, 5, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
   GPIOinConfigure(GPIOC, 6, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
   GPIOinConfigure(GPIOC, 7, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
   GPIOinConfigure(GPIOC, 8, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
+  GPIOinConfigure(GPIOC, 9, GPIO_PuPd_UP, EXTI_Mode_Interrupt, EXTI_Trigger_Falling);
 
   //Clear interrupt bits and enable interrupts
-  EXTI->PR = EXTI_PR_PR5;
-  EXTI->PR = EXTI_PR_PR6;
-  EXTI->PR = EXTI_PR_PR7;
-  EXTI->PR = EXTI_PR_PR8;
+  EXTI->PR = 255;
+  EXTI->PR;
+
   NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
 
 void EXTI9_5_IRQHandler(void) {
-
     //Temporary disable interrupts
     NVIC_DisableIRQ(EXTI9_5_IRQn);
 
+    scan_keyboard();
     //Set high state in collumn lines
-    GPIOC->BSRRH = 1 << 1;
-    GPIOC->BSRRH = 1 << 2;
-    GPIOC->BSRRH = 1 << 3;
-    GPIOC->BSRRH = 1 << 4;
+    GPIOC->BSRRL = 1 << 0;
+    GPIOC->BSRRL = 1 << 1;
+    GPIOC->BSRRL = 1 << 2;
+    GPIOC->BSRRL = 1 << 3;
 
     //Reset timer CNT
     TIM3->CNT = 0;
 
-    if (EXTI->PR | EXTI_PR_PR5){
 
-        EXTI->PR = EXTI_PR_PR5;
+
+    if (EXTI->PR & EXTI_PR_PR6){
+        EXTI->PR |= EXTI_PR_PR6;
     }
-    if (EXTI->PR | EXTI_PR_PR6){
-
-        EXTI->PR = EXTI_PR_PR6;
+    if (EXTI->PR & EXTI_PR_PR7){
+        EXTI->PR |= EXTI_PR_PR7;
     }
-    if (EXTI->PR | EXTI_PR_PR7){
-
-        EXTI->PR = EXTI_PR_PR7;
+    if (EXTI->PR & EXTI_PR_PR8){
+        EXTI->PR |= EXTI_PR_PR8;
     }
-    if (EXTI->PR | EXTI_PR_PR8){
-
-        EXTI->PR = EXTI_PR_PR8;
+    if (EXTI->PR & EXTI_PR_PR9){
+        EXTI->PR |= EXTI_PR_PR9;
     }
 
+    //operations_print_queue[queue_print_n++] = '0' + 4;
     //Start the timer
     TIM3->CR1 |= TIM_CR1_CEN;
+
+
 }
 
 
@@ -229,8 +362,15 @@ void process_write()
 
 int main() {
   LCDconfigure();
-  press(5);
-  press(1);
+  init_logic();
+  configure_timer();
+  configure_keyboard();
+  //operations_print_queue[queue_print_n++] = '0' + 1;
+  //operations_print_queue[queue_print_n++] = '0' + 2;
+  //operations_print_queue[queue_print_n++] = '0' + 3;
+
+  //press(5);
+  //press(1);
 
   while(1){
     process_read();
