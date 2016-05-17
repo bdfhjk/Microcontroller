@@ -43,12 +43,13 @@ void init_logic(){
 
   operation = 0;
 
-  state = 0;
+  state = 1;
 
   ready_to_process = 0;
 }
 
 void print_error(){
+  LCDclear();
   operations_print_queue[0] = 'E';
   operations_print_queue[1] = 'R';
   operations_print_queue[2] = 'R';
@@ -60,6 +61,8 @@ void print_error(){
 }
 
 void print(){
+  print_error();
+  return;
   long long number_ans = 0;
   if (operation == '+') number_ans = number_1 + number_2;
   if (operation == '-') number_ans = number_1 - number_2;
@@ -105,19 +108,22 @@ void press(char a){
     if ('0' <= a && a <= '9'){
       number_2 *= 10;
       number_2 += a - '0';
-      operations_print_queue[queue_print_n++] = a - '0';
+      operations_print_queue[queue_print_n++] = a;
     }
   }
   if (state == 1){
     if ('0' <= a && a <= '9'){
       number_1 *= 10;
       number_1 += a - '0';
-      operations_print_queue[queue_print_n++] = a - '0';
+      operations_print_queue[queue_print_n++] = a;
     }
   }
   if (a == '=' && state == 2) print();
   if (state == 1 && (is_boolean(a) == 1)){
       operation = a;
+      LCDclear();
+      queue_print_n = 0;
+      queue_print_a = 0;
       state++;
   }
 }
@@ -156,7 +162,7 @@ void TIM3_IRQHandler(void) {
     //scan_keyboard();
 
     if (ready_to_process != 0)
-      operations_print_queue[queue_print_n++] = ready_to_process;
+      press(ready_to_process);
 
     TIM3->CR1 &= 0x1110;
     TIM3->DIER = TIM_DIER_UIE;
