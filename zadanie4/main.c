@@ -15,6 +15,13 @@ enum STATE {
     DISPLAY   //Displaying the result on the LCD
 };
 
+/*
+A - (+)
+B - (-)
+C - (*)
+D - (/)
+# - (=)
+*/
 enum STATE state;
 
 long long number_1;
@@ -28,41 +35,45 @@ char operations_read_queue[1000];
 int queue_print_n;
 int queue_print_a;
 char operations_print_queue[1000];
+int line_long;
 
 char ready_to_process;
 
-void init_logic(){
-  queue_read_a = 0;
-  queue_read_n = 0;
-
+void clear_lcd_logic(){
+  LCDclear();
   queue_print_a = 0;
   queue_print_n = 0;
+  queue_read_a = 0;
+  queue_read_n = 0;
+  line_long = 0;
+}
+
+void init_logic(){
+  clear_lcd_logic();
 
   number_1 = 0;
   number_2 = 0;
+  line_long = 0;
 
   operation = 0;
 
-  state = 1;
+  state = READ_1;
 
   ready_to_process = 0;
 }
 
 void print_error(){
-  LCDclear();
-  operations_print_queue[0] = 'E';
-  operations_print_queue[1] = 'R';
-  operations_print_queue[2] = 'R';
-  operations_print_queue[3] = 'O';
-  operations_print_queue[4] = 'R';
-  queue_print_n = 5;
-  queue_print_a = 0;
-  state = 3;
+  clear_lcd_logic();
+  operations_print_queue[queue_print_n++] = 'E';
+  operations_print_queue[queue_print_n++] = 'R';
+  operations_print_queue[queue_print_n++] = 'R';
+  operations_print_queue[queue_print_n++] = 'O';
+  operations_print_queue[queue_print_n++] = 'R';
+  state = DISPLAY;
 }
 
 void print(){
-  print_error();
-  return;
+  clear_lcd_logic();
   long long number_ans = 0;
   if (operation == '+') number_ans = number_1 + number_2;
   if (operation == '-') number_ans = number_1 - number_2;
@@ -81,13 +92,17 @@ void print(){
     operations_print_queue[0] = '0';
     return;
   }
-  while (number_ans){
-      int number = number_ans % 10;
+
+  long long m = 1;
+  while (m*10 <= number_ans) m*=10;
+
+  while (m){
+      int number = (number_ans / m) % 10;
       operations_print_queue[queue_print_n++] = '0' + number;
-      number_ans /= 10;
-      queue_print_a = 0;
+      m /= 10;
   }
-  state=3;
+  queue_print_a = 0;
+  state=DISPLAY;
 }
 
 int is_boolean(char a){
@@ -100,31 +115,33 @@ int is_boolean(char a){
 
 
 void press(char a){
-  if (state == 4)
-    init_logic();
-  if (state == 3 || state == 0)
-    return;
-  if (state == 2){
-    if ('0' <= a && a <= '9'){
-      number_2 *= 10;
-      number_2 += a - '0';
-      operations_print_queue[queue_print_n++] = a;
-    }
-  }
-  if (state == 1){
-    if ('0' <= a && a <= '9'){
-      number_1 *= 10;
-      number_1 += a - '0';
-      operations_print_queue[queue_print_n++] = a;
-    }
-  }
-  if (a == '=' && state == 2) print();
-  if (state == 1 && (is_boolean(a) == 1)){
-      operation = a;
-      LCDclear();
-      queue_print_n = 0;
-      queue_print_a = 0;
-      state++;
+  switch (state) {
+    case INIT:
+      return;
+    case READ_1:
+      if ('0' <= a && a <= '9'){
+        number_1 *= 10;
+        number_1 += a - '0';
+        operations_print_queue[queue_print_n++] = a;
+      }
+      if ((is_boolean(a) == 1)){
+          operation = a;
+          clear_lcd_logic();
+          state = READ_2;
+      }
+      break;
+    case READ_2:
+      if ('0' <= a && a <= '9'){
+        number_2 *= 10;
+        number_2 += a - '0';
+        operations_print_queue[queue_print_n++] = a;
+      }
+      if (a == '=') print();
+      break;
+    case WRITE:
+      return;
+    case DISPLAY:
+      init_logic();
   }
 }
 
@@ -230,7 +247,8 @@ void TIM3_IRQHandler(void) {
 void scan_keyboard(){
   ready_to_process = 0;
   int i;
-  //Set only 1 column active
+
+  //Set only 1st column active
   GPIOC->BSRRH = 1 << 0;
   GPIOC->BSRRL = 1 << 1;
   GPIOC->BSRRL = 1 << 2;
@@ -242,10 +260,9 @@ void scan_keyboard(){
   if (!(GPIOC->IDR & (1 << 6))) ready_to_process = '0' + 1;
   if (!(GPIOC->IDR & (1 << 7))) ready_to_process = '0' + 4;
   if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '0' + 7;
-  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = 'C';
+  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = 'C';   //*
 
-
-  //Set only 1 column active
+  //Set only 2nd column active
   GPIOC->BSRRL = 1 << 0;
   GPIOC->BSRRH = 1 << 1;
   GPIOC->BSRRL = 1 << 2;
@@ -259,7 +276,7 @@ void scan_keyboard(){
   if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '0' + 8;
   if (!(GPIOC->IDR & (1 << 9))) ready_to_process = '0';
 
-  //Set only 1 column active
+  //Set only 3rd column active
   GPIOC->BSRRL = 1 << 0;
   GPIOC->BSRRL = 1 << 1;
   GPIOC->BSRRH = 1 << 2;
@@ -271,9 +288,9 @@ void scan_keyboard(){
   if (!(GPIOC->IDR & (1 << 6))) ready_to_process = '0' + 3;
   if (!(GPIOC->IDR & (1 << 7))) ready_to_process = '0' + 6;
   if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '0' + 9;
-  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = '=';
+  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = '=';  //#
 
-  //Set only 1 column active
+  //Set only 4th column active
   GPIOC->BSRRL = 1 << 0;
   GPIOC->BSRRL = 1 << 1;
   GPIOC->BSRRL = 1 << 2;
@@ -282,18 +299,20 @@ void scan_keyboard(){
   for (i = 0; i < 1000; i++)
   __NOP();
 
-  if (!(GPIOC->IDR & (1 << 6))) ready_to_process = '+';
-  if (!(GPIOC->IDR & (1 << 7))) ready_to_process = '-';
-  if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '*';
-  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = '/';
+  if (!(GPIOC->IDR & (1 << 6))) ready_to_process = '+'; //A
+  if (!(GPIOC->IDR & (1 << 7))) ready_to_process = '-'; //B
+  if (!(GPIOC->IDR & (1 << 8))) ready_to_process = '*'; //C
+  if (!(GPIOC->IDR & (1 << 9))) ready_to_process = '/'; //D
 
 }
 
 void configure_keyboard() {
+  //Enable GPIO clock.
   RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
   RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
   __NOP();
   __NOP();
+
   //Configure columns
   GPIOoutConfigure(GPIOC, 0, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
   GPIOoutConfigure(GPIOC, 1, GPIO_OType_PP, GPIO_Low_Speed, GPIO_PuPd_NOPULL);
@@ -315,6 +334,7 @@ void configure_keyboard() {
   EXTI->PR = 255;
   EXTI->PR;
 
+  //Enable interrupts on channels 5,6,7,8,9
   NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
 
@@ -332,8 +352,7 @@ void EXTI9_5_IRQHandler(void) {
     //Reset timer CNT
     TIM3->CNT = 0;
 
-
-
+    //Clear interrupt bits
     if (EXTI->PR & EXTI_PR_PR6){
         EXTI->PR |= EXTI_PR_PR6;
     }
@@ -347,23 +366,20 @@ void EXTI9_5_IRQHandler(void) {
         EXTI->PR |= EXTI_PR_PR9;
     }
 
-    //operations_print_queue[queue_print_n++] = '0' + 4;
     //Start the timer
     TIM3->CR1 |= TIM_CR1_CEN;
-
-
-}
-
-
-void process_read()
-{
-
 }
 
 void process_write()
 {
-  if (queue_print_a != queue_print_n)
+  if (line_long == 9){
+    line_long = 0;
+    LCDputchar('\n');
+  }
+  if (queue_print_a != queue_print_n){
     LCDputchar(operations_print_queue[queue_print_a++]);
+    line_long++;
+  }
 }
 
 int main() {
@@ -371,15 +387,8 @@ int main() {
   init_logic();
   configure_timer();
   configure_keyboard();
-  //operations_print_queue[queue_print_n++] = '0' + 1;
-  //operations_print_queue[queue_print_n++] = '0' + 2;
-  //operations_print_queue[queue_print_n++] = '0' + 3;
-
-  //press(5);
-  //press(1);
 
   while(1){
-    process_read();
     process_write();
   }
   return 0;
